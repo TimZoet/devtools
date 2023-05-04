@@ -8,10 +8,10 @@ import sys
 import typing
 
 from conan.api.conan_api import ConanAPI
-from conans.client.graph.graph_error import GraphError
+from conans.client.graph.graph_error import GraphMissingError
 from conans.errors import ConanException
-from conanutils import ConanUtils
-from gitutils import GitUtils
+from .conanutils import ConanUtils
+from .gitutils import GitUtils
 
 known_projects = [
     "alexandria",
@@ -41,52 +41,6 @@ class Commands:
             raise RuntimeError("Could not find INI file.")
 
     @staticmethod
-    def setup(args):
-        """
-        Write startup shell script and INI file to root directory.
-        """
-
-        if not os.path.isabs(args.dir):
-            raise RuntimeError(f"Root directory {args.dir} is not an absolute path.")
-
-        if platform.system() == "Windows":
-            filename = os.path.join(args.dir, "startup.bat")
-            source = f"""
-@echo off
-set PATH={os.path.join(sys.path[0], "windows")};%PATH%
-set DEVTOOLS_ROOT_DIR={args.dir}
-set CONAN_HOME={args.conan}
-{args.pyenv}\\Scripts\\activate.bat
-@echo on
-"""
-        else:
-            filename = os.path.join(args.dir, "startup")
-            source = f"""
-export PATH={os.path.join(sys.path[0], "linux")}:$PATH
-export DEVTOOLS_ROOT_DIR={args.dir}
-export CONAN_HOME={args.conan}
-source ~/dev/pyenv/bin/activate
-alias python=python3
-alias pip=pip3
-"""
-        print(f"Writing startup file {filename}.")
-        if os.path.exists(filename):
-            print("File already exists, overwriting.")
-        with open(filename, encoding="UTF8", mode="w") as f:
-            f.write(source)
-        
-        filename = os.path.join(args.dir, "devtools.ini")
-        print(f"Writing INI file {filename}.")
-        with open(filename, encoding="UTF8", mode="w") as f:
-            config = configparser.ConfigParser()
-            config["default"] = {
-                "projectdir": args.projectdir if os.path.isabs(args.projectdir) else os.path.join(args.dir, args.projectdir)
-            }
-            config.write(f)
-
-        print("Setup done.")
-
-    @staticmethod
     def packages(_):
         """
         Install required Python packages.
@@ -97,6 +51,9 @@ alias pip=pip3
         pkg = ["conan>=2.0.3", "Sphinx>=6.0", "pydata-sphinx-theme", "gitpython>=3.1"]
         for p in pkg:
             subprocess.check_call([sys.executable, "-m", "pip", "install", p])
+        
+        # Install base Conan profiles.
+        subprocess.check_call(["conan", "config", "install", "-t", "dir", "-sf", "profiles", "-tf", "profiles", os.path.join(os.path.dirname(__file__), "conan-config", "profiles")])
 
     @staticmethod
     def clone(args) -> typing.Iterable[str]:
@@ -210,7 +167,7 @@ alias pip=pip3
                 break
 
             # Unexpected error or missing package from some other weirdo.
-            if deps_graph.error.kind != GraphError.MISSING_RECIPE or deps_graph.error.require.ref.user != "timzoet":
+            if not isinstance(deps_graph.error, GraphMissingError) or deps_graph.error.require.ref.user != "timzoet":
                 print(f"Failed to resolve dependency for {p}.")
                 problems.append(f"Failed to resolve dependency {deps_graph.error.require.ref.name}.")
                 break
@@ -293,18 +250,6 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers()
-
-    p_setup = subparsers.add_parser("setup", help="Prepares a development environment.")
-    p_setup.add_argument("--dir", dest="dir", required=False, default=os.path.join(home, "dev"),
-                         help="Root directory in which all the magic happens. Defaults to ~/dev.")
-    p_setup.add_argument("--pyenv", dest="pyenv", required=False, default=os.path.join(home, "dev", "pyenv"),
-                         help="Optional path to Python virtual environment. Defaults to ~/dev/pyenv.")
-    p_setup.add_argument("--conan", dest="conan", required=False, default=os.path.join(home, "dev", ".conan"),
-                         help="Optional path to Conan home directory. Defaults to ~/dev/.conan.")
-    p_setup.add_argument("--projectdir", dest="projectdir", required=False,
-                         default=os.path.join(home, "dev", "projects"), help="Directory in which repositories are\
-                            stored. If relative, it is joined with the root directory.")
-    p_setup.set_defaults(func=Commands.setup)
 
     p_packages = subparsers.add_parser("python-packages", help="Installs required Python packages.")
     p_packages.set_defaults(func=Commands.packages)

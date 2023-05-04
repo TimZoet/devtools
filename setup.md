@@ -85,7 +85,7 @@ can do the following:
 Run the following commands:
 
 ```sh
-python %USERPROFILE%/dev/devtools/devtools.py setup
+.\pyenv\Scripts\python %USERPROFILE%/dev/devtools/setup.py
 ```
 
 Create a new profile in the Terminal with the following command line (replace the path to the Visual Studio installation
@@ -102,7 +102,7 @@ Optionally, set a starting directory: `%USERPROFILE%/dev`. From here on out, do 
 Run the following commands:
 
 ```sh
-python3 ~/dev/devtools/devtools.py setup
+pyenv/Scripts/python ~/dev/devtools/setup.py
 chmod +x ~/dev/devtools/linux/devtools
 ```
 
@@ -112,4 +112,4 @@ From here on out, source the startup script before doing any work:
 . ~/dev/startup
 ```
 
-**Note:** Query the help of the setup command for more options.
+**Note:** Query the help of the setup script for more options.
