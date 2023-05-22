@@ -10,8 +10,8 @@ import typing
 from conan.api.conan_api import ConanAPI
 from conans.client.graph.graph_error import GraphMissingError
 from conans.errors import ConanException
-from .conanutils import ConanUtils
-from .gitutils import GitUtils
+from conanutils import ConanUtils
+from gitutils import GitUtils
 
 known_projects = [
     "alexandria",
@@ -39,6 +39,22 @@ class Commands:
             raise RuntimeError(f"Unknown platform: {platform.system()}")
         if not os.path.exists(os.path.join(os.getenv("DEVTOOLS_ROOT_DIR"), "devtools.ini")):
             raise RuntimeError("Could not find INI file.")
+
+    @staticmethod
+    def get_arg_project(args) -> typing.Tuple[bool, typing.Optional[str], typing.Optional[str]]:
+        project = args.project
+        tag = None
+
+        if project is None:
+            project = os.path.basename(os.path.normpath(os.getcwd()))
+
+        if "/" in project:
+            project, tag = project.split("/")
+
+        if project not in known_projects:
+            return False, project, tag
+
+        return True, project, tag
 
     @staticmethod
     def packages(_):
@@ -193,8 +209,18 @@ class Commands:
         problems = []
 
         project = args.project
+        if project is None:
+            project = os.path.basename(os.path.normpath(os.getcwd()))
         if "/" in project:
             project, _ = project.split("/")
+        if project not in known_projects:
+            problems.append(f"Unknown project {project}.")
+            return problems
+
+        known, project, _ = Commands.get_arg_project(args)
+        if not known:
+            problems.append(f"Unknown project {project}.")
+            return problems
 
         source = os.path.join(config["default"]["projectdir"], project, "source")
         if os.path.isabs(args.output_folder):
@@ -223,9 +249,10 @@ class Commands:
 
         problems = []
 
-        project = args.project
-        if "/" in project:
-            project, _ = project.split("/")
+        known, project, _ = Commands.get_arg_project(args)
+        if not known:
+            problems.append(f"Unknown project {project}.")
+            return problems
 
         config = configparser.ConfigParser()
         config.read(os.path.join(os.getenv("DEVTOOLS_ROOT_DIR"), "devtools.ini"))
@@ -279,7 +306,8 @@ if __name__ == "__main__":
     p_clear_cache.set_defaults(func=Commands.clear_cache)
 
     p_install = subparsers.add_parser("conan-install", help="Runs the `conan install` command for a single project.")
-    p_install.add_argument("--project", dest="project", required=True, help="Project name.")
+    p_install.add_argument("--project", dest="project", help="Project name. If not set, will try to derive current\
+                           project from working directory.")
     p_install.add_argument("--profile", dest="profile", required=True, help="Name of profile. Can be a profile stored\
                            in the Conan cache, or in the current projects' buildtools/profiles folder. The latter takes\
                            precedence.")
@@ -292,7 +320,8 @@ if __name__ == "__main__":
     p_install.set_defaults(func=Commands.install)
 
     p_generate = subparsers.add_parser("cmake-generate", help="Runs the cmake generate command for a single project.")
-    p_generate.add_argument("--project", dest="project", required=True, help="Project name.")
+    p_generate.add_argument("--project", dest="project", help="Project name. If not set, will try to derive current\
+                            project from working directory.")
     p_generate.add_argument("--output-folder", "--of", "-of", dest="output_folder", required=False, default="build",
                             help="Output folder, passed to the -of argument of the conan install command. If relative,\
                             it is joined with the current projects' root folder (i.e. next to the source folder.")

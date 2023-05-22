@@ -1,5 +1,3 @@
 @echo off
-pushd %~dp0
-python ..\devtools.py %*
-popd
+python %~dp0\..\devtools.py %*
 @echo on
