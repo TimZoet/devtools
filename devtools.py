@@ -1,6 +1,7 @@
 import argparse
 import configparser
 import os
+import pathlib
 import platform
 import re
 import subprocess
@@ -30,6 +31,16 @@ def filter_known_projects(projects):
     # Drop duplicate and unknown projects.
     return list(p for p in set(projects) if p.split("/")[0] in known_projects)
 
+def get_config():
+    config = configparser.ConfigParser()
+    config.read(os.path.join(os.getenv("DEVTOOLS_ROOT_DIR"), "devtools.ini"))
+    return config
+
+def get_clang_format_path() -> str:
+    return os.path.join(os.getenv("VCINSTALLDIR"), "Tools/Llvm/x64/bin/clang-format.exe")
+
+
+
 class Commands:
     @staticmethod
     def validate():
@@ -42,13 +53,31 @@ class Commands:
 
     @staticmethod
     def get_arg_project(args) -> typing.Tuple[bool, typing.Optional[str], typing.Optional[str]]:
+        """Retrieve an explicit project name from the parser arguments, or try to derive from the current working
+        directory.
+
+        Args:
+            args: Parser arguments.
+
+        Returns:
+            typing.Tuple[bool, typing.Optional[str], typing.Optional[str]]: success, project, tag
+        """        
         project = args.project
         tag = None
 
+        # If no explicit project was given, try to derive from the current directory. This is done by subtracting the
+        # projectdir from the front, and then taking the first directory name. E.g.:
+        # projectdir = /path/to/dev/projects
+        # currentdir = /path/to/dev/projects/<project>/whatevs/something
+        #                                    ^^^^^^^^^
         if project is None:
-            project = os.path.basename(os.path.normpath(os.getcwd()))
+            config = get_config()
+            projectdir = os.path.normpath(config["default"]["projectdir"])
+            currentdir = os.path.normpath(os.getcwd())
+            if os.path.commonprefix([projectdir, currentdir]) == projectdir:
+                project = pathlib.Path(os.path.relpath(currentdir, projectdir)).parts[0]
 
-        if "/" in project:
+        elif "/" in project:
             project, tag = project.split("/")
 
         if project not in known_projects:
@@ -85,8 +114,7 @@ class Commands:
 
         problems = []
 
-        config = configparser.ConfigParser()
-        config.read(os.path.join(os.getenv("DEVTOOLS_ROOT_DIR"), "devtools.ini"))
+        config = get_config()
 
         for p in projects:
             tag = None
@@ -120,8 +148,7 @@ class Commands:
 
         problems = []
 
-        config = configparser.ConfigParser()
-        config.read(os.path.join(os.getenv("DEVTOOLS_ROOT_DIR"), "devtools.ini"))
+        config = get_config()
 
         for p in projects:
             success, err = ConanUtils.export(config, p)
@@ -134,8 +161,7 @@ class Commands:
     def export_deps(args) -> typing.Iterable[str]:
         Commands.validate()
 
-        config = configparser.ConfigParser()
-        config.read(os.path.join(os.getenv("DEVTOOLS_ROOT_DIR"), "devtools.ini"))
+        config = get_config()
 
         problems = []
 
@@ -203,8 +229,7 @@ class Commands:
     def install(args) -> typing.Iterable[str]:
         Commands.validate()
 
-        config = configparser.ConfigParser()
-        config.read(os.path.join(os.getenv("DEVTOOLS_ROOT_DIR"), "devtools.ini"))
+        config = get_config()
 
         problems = []
 
@@ -254,8 +279,7 @@ class Commands:
             problems.append(f"Unknown project {project}.")
             return problems
 
-        config = configparser.ConfigParser()
-        config.read(os.path.join(os.getenv("DEVTOOLS_ROOT_DIR"), "devtools.ini"))
+        config = get_config()
 
         source = os.path.join(config["default"]["projectdir"], project, "source")
         if os.path.isabs(args.output_folder):
@@ -269,6 +293,34 @@ class Commands:
         else:
             problems.append("Cannot generate on any platforms other that Windows yet.")
             return problems
+
+        return problems
+
+    @staticmethod
+    def clang_format(args) -> typing.Iterable[str]:
+        problems = []
+        if platform.system() != "Windows":
+            problems.append("clang-format is currently only supported on Windows.")
+
+        known, project, _ = Commands.get_arg_project(args)
+        if not known:
+            problems.append(f"Unknown project {project}.")
+            return problems
+
+        cf = get_clang_format_path()
+
+        def format_dir(folder: str) -> None:
+            for file in os.listdir(folder):
+                item = os.path.join(folder, file)
+                if os.path.isfile(item) and os.path.splitext(item)[1] in [".h", ".cpp"]:
+                    subprocess.check_call([cf, "-i", item])
+                    #print(f"clang-format {item}")
+                elif os.path.isdir(item):
+                    format_dir(item)
+        
+        config = get_config()
+        source = os.path.join(config["default"]["projectdir"], project, "source")
+        format_dir(source)
 
         return problems
 
@@ -327,9 +379,15 @@ if __name__ == "__main__":
                             it is joined with the current projects' root folder (i.e. next to the source folder.")
     p_generate.set_defaults(func=Commands.generate)
 
+    p_clang_format = subparsers.add_parser("clang-format", help="Runs clang-format on a single project.")
+    p_clang_format.add_argument("--project", dest="project", help="Project name. If not set, will try to derive current\
+                            project from working directory.")
+    p_clang_format.set_defaults(func=Commands.clang_format)
+
     a = parser.parse_args()
 
     try:
+        print(a.func.__name__)
         problems = a.func(a)
     except Exception as ee:
         print(f"Failed to run command. Unexpected error: {ee}")

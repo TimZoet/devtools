@@ -24,3 +24,8 @@ Project Setup
 
 * [**conan-install**](install.md) Runs the `conan install` command for a single project.
 * [**cmake-generate**](generate.md) Runs the `cmake generate` command for a single project.
+
+Utils
+-----
+
+* [**clang-format**](clang_format.md) Runs `clang-format` on all files in a single project.
