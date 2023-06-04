@@ -121,7 +121,10 @@ class Commands:
             if "/" in p:
                 p, tag = p.split("/")
 
-            url = f"git@github.com:TimZoet/{p}.git"
+            if config["default"]["http"]:
+                url = f"https://github.com/TimZoet/{p}.git"
+            else:
+                url = f"git@github.com:TimZoet/{p}.git"
             source = os.path.join(config["default"]["projectdir"], p, "source")
             repo = GitUtils.open_or_clone(url, source)
 

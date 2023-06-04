@@ -39,7 +39,8 @@ alias pip=pip3
     with open(filename, encoding="UTF8", mode="w") as f:
         config = configparser.ConfigParser()
         config["default"] = {
-            "projectdir": args.projectdir if os.path.isabs(args.projectdir) else os.path.join(args.dir, args.projectdir)
+            "projectdir": args.projectdir if os.path.isabs(args.projectdir) else os.path.join(args.dir, args.projectdir),
+            "http": str(args.http)
         }
         config.write(f)
 
@@ -56,9 +57,10 @@ if __name__ == "__main__":
                         help="Optional path to Python virtual environment. Defaults to ~/dev/pyenv.")
     parser.add_argument("--conan", dest="conan", required=False, default=os.path.join(home, "dev", ".conan"),
                         help="Optional path to Conan home directory. Defaults to ~/dev/.conan.")
-    parser.add_argument("--projectdir", dest="projectdir", required=False,
-                        default=os.path.join(home, "dev", "projects"), help="Directory in which repositories are\
-                        stored. If relative, it is joined with the root directory.")
+    parser.add_argument("--projectdir", dest="projectdir", required=False, default="projects", help="Directory in which\
+                        repositories are stored. If relative, it is joined with the root directory.")
+    parser.add_argument("--http", "--https", dest="http", action="store_true", help="Use HTTP(S) to clone repositories.\
+                        Useful if you do not have SSH configured.")
     parser.set_defaults(func=setup)
 
     a = parser.parse_args()
