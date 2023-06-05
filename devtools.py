@@ -6,6 +6,7 @@ import platform
 import re
 import subprocess
 import sys
+import tempfile
 import typing
 
 from conan.api.conan_api import ConanAPI
@@ -117,26 +118,8 @@ class Commands:
         config = get_config()
 
         for p in projects:
-            tag = None
-            if "/" in p:
-                p, tag = p.split("/")
-
-            if config["default"]["http"]:
-                url = f"https://github.com/TimZoet/{p}.git"
-            else:
-                url = f"git@github.com:TimZoet/{p}.git"
             source = os.path.join(config["default"]["projectdir"], p, "source")
-            repo = GitUtils.open_or_clone(url, source)
-
-            if tag:
-                print(f"Checking out {tag}.")
-                try:
-                    repo.git.checkout(tag)
-                except Exception as e:
-                    print(f"Failed to check out specific branch due to the following error: {e}.")
-                    problems.append(f"Failed to checkout branch {tag} for {url} at {source}.")
-
-            del repo
+            GitUtils.open_or_clone_project(p, source, config)
 
         return problems
 
@@ -168,9 +151,10 @@ class Commands:
 
         problems = []
 
-        project, tag = args.project, None
-        if "/" in project:
-            project, tag = project.split("/")
+        known, project, tag = Commands.get_arg_project(args)
+        if not known:
+            problems.append(f"Unknown project {project}.")
+            return problems
 
         # TODO: Use tag.
 
@@ -186,6 +170,8 @@ class Commands:
         if not os.path.exists(conanfile):
             problems.append(f"Could not find {conanfile}.")
             return problems
+        
+        tmp = tempfile.TemporaryDirectory()
 
         # Iteratively discover missing pacakges by trying to construct the dependency graph.
         while True:
@@ -201,9 +187,19 @@ class Commands:
                 pattern = re.compile(r"pyreq\/\d+\.\d+\.\d+@timzoet\/v\d+\.\d+\.\d+")
                 pyreq_tag = pattern.search(str(e))
                 if pyreq_tag:
-                    ConanUtils.export(config, f"pyreq/{pyreq_tag.group(0).split('/')[2]}")
-                    continue
+                    # Determine URL.
+                    if config["default"]["http"]:
+                        url = f"https://github.com/TimZoet/pyreq.git"
+                    else:
+                        url = f"git@github.com:TimZoet/pyreq.git"
 
+                    # Clone repo and export.
+                    dep_source = os.path.join(tmp.name, "pyreq")
+                    subprocess.check_call(["git", "clone", url, "--depth", "1", "-b", pyreq_tag.group(0).split('/')[2],
+                                           dep_source])
+                    subprocess.check_call(["conan", "export", dep_source])
+                    continue
+                
                 problems.append(f"Unexpected error when reading {conanfile}: {e}.")
                 break
 
@@ -217,8 +213,17 @@ class Commands:
                 problems.append(f"Failed to resolve dependency {deps_graph.error.require.ref.name}.")
                 break
 
-            # Export requirement to local cache.
-            ConanUtils.export(config, f"{deps_graph.error.require.ref.name}/{deps_graph.error.require.ref.channel}")
+            # Determine URL.
+            if config["default"]["http"]:
+                url = f"https://github.com/TimZoet/{deps_graph.error.require.ref.name}.git"
+            else:
+                url = f"git@github.com:TimZoet/{deps_graph.error.require.ref.name}.git"
+
+            # Clone repo and export.
+            dep_source = os.path.join(tmp.name, deps_graph.error.require.ref.name)
+            subprocess.check_call(["git", "clone", url, "--depth", "1", "--recurse-submodules", "-b",
+                                   deps_graph.error.require.ref.channel, dep_source])
+            subprocess.check_call(["conan", "export", dep_source])
 
         return problems
 
@@ -350,8 +355,8 @@ if __name__ == "__main__":
 
     p_export_deps = subparsers.add_parser("export-deps", help="Automatically resolves all required packages for a\
                                           single project and exports them to the local Conan cache.")
-    p_export_deps.add_argument("--project", dest="project", required=True, help="Project name.  To specify a tag, use\
-                               'project/tag'.")
+    p_export_deps.add_argument("--project", dest="project", required=False, help="Project name. If not set, will try to\
+                               derive current project from working directory.")
     p_export_deps.add_argument("--profile", dest="profile", required=True, help="Name of profile. Can be a profile\
                                stored in the Conan cache, or in the current projects' buildtools/profiles folder. The\
                                latter takes precedence.")
@@ -393,7 +398,8 @@ if __name__ == "__main__":
         print(a.func.__name__)
         problems = a.func(a)
     except Exception as ee:
-        print(f"Failed to run command. Unexpected error: {ee}")
+        print("=====================================================")
+        print(f"Failed to run devtools command. Unexpected error: {ee}")
         sys.exit(1)
 
     if problems:
@@ -403,4 +409,5 @@ if __name__ == "__main__":
             print(f"  {p}")
         sys.exit(1)
 
+    print("=====================================================")
     print("devtools ran successfully.")
