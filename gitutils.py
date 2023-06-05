@@ -56,7 +56,7 @@ class GitUtils:
             project, tag = project.split("/")
 
         # Determine URL.
-        if config["default"]["http"]:
+        if config.getboolean("default", "http"):
             url = f"https://github.com/TimZoet/{project}.git"
         else:
             url = f"git@github.com:TimZoet/{project}.git"
